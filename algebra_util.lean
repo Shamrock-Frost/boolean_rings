@@ -1,3 +1,4 @@
+import .logic_util
 section add_group
 
 lemma {u} add_group.ident_unique
@@ -5,6 +6,7 @@ lemma {u} add_group.ident_unique
   (e : G) (h : ∀ x, x + e = x) : e = 0 :=
   eq.trans (eq.symm (zero_add e)) (h 0)
 
+@[reducible]
 def {u v} add_group.is_homomorphism
   {G : Type u} {H : Type v} [add_group G] [add_group H]
   (ψ : G → H) 
@@ -72,3 +74,75 @@ begin
 end
 
 end add_group
+
+section monoid
+
+lemma {u} monoid.ident_unique
+  {M : Type u} [monoid M]
+  (e : M) (h : ∀ x, x * e = x) : e = 1 :=
+  eq.trans (eq.symm (one_mul e)) (h 1)
+
+@[reducible]
+def {u v} monoid.is_homomorphism
+  {M : Type u} {M' : Type v} [monoid M] [monoid M']
+  (ψ : M → M') 
+  := (∀ x y, ψ (x * y) = ψ x * ψ y) ∧ ψ 1 = 1
+
+end monoid
+
+section ring
+
+@[reducible]
+def {u v} ring.is_homomorphism
+  {R : Type u} {S : Type v} [ring R] [ring S]
+  (ψ : R → S) := add_group.is_homomorphism ψ
+               ∧ monoid.is_homomorphism ψ 
+
+@[reducible]
+def {u v} ring.is_ismorphism
+  {R : Type u} {S : Type v} [ring R] [ring S]
+  (ψ : R → S) := ring.is_homomorphism ψ
+               ∧ (∃ ψ', ring.is_homomorphism ψ'
+                      ∧ ψ ∘ ψ' = id
+                      ∧ ψ' ∘ ψ = id)
+
+lemma {u v} classical.ring.bijective_homomorphism_is_isomorphism
+  {R : Type u} {S : Type v} [ring R] [ring S]
+  (ψ : R → S) : function.bijective ψ
+              → ring.is_homomorphism ψ
+              → ring.is_ismorphism ψ :=
+begin
+  intros h h', cases h with ψ_i ψ_s,
+  dsimp [ring.is_ismorphism], constructor,
+  assumption,
+  cases classical.axiom_of_choice ψ_s with ψ',
+  simp at h,
+  have : ∀ x, ψ' (ψ x) = x,
+  { intro x, apply ψ_i, apply h },
+  existsi ψ', constructor,
+  { constructor,
+    { intros x y, rw [← h x, ← h y],
+      rw ← h'.left, repeat { rw this } },
+    constructor,
+    { intros x y, rw [← h x, ← h y],
+      rw ← h'.right.left, repeat { rw this } },
+    { transitivity ψ' (ψ 1), congr, symmetry,
+      exact h'.right.right, rw this } },
+  { constructor; apply funext; assumption }
+end
+
+definition {u v} ring.isomorphic
+  (R : Type u) (S : Type v) [ring R] [ring S]
+  := ∃ ψ : R → S, ring.is_ismorphism ψ
+
+infix ` ≅ `:50 := ring.isomorphic
+
+@[symm]
+lemma {u v} ring.isomorphic_symm
+  (R : Type u) (S : Type v) [ring R] [ring S]
+  : R ≅ S → S ≅ R
+| ⟨ψ, ⟨h, ⟨ψ', ⟨h', k⟩⟩⟩⟩ := ⟨ψ', ⟨h', ⟨ψ, ⟨h, and.symm k⟩⟩⟩⟩
+
+open classical
+
+end ring

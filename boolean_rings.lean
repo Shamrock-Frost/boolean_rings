@@ -1020,6 +1020,19 @@ lemma pset_embed_inj : function.injective min_nonzero.pset_embed :=
         refl } },
     { apply subtypes_of_finite_types_are_finite, assumption } }
 
+lemma pset_embed_surj : function.surjective min_nonzero.pset_embed :=
+begin
+  admit
+end
+
+lemma pset_embed_preserves_one : min_nonzero.pset_embed 1 = 1 :=
+begin
+  apply monoid.ident_unique, intro x,
+  cases (pset_embed_surj 1),
+  cases (pset_embed_surj x),
+  rw [← h_1, ← pset_embed_preserves_mul, mul_one]
+end
+
 end pset_embed
 
 end
