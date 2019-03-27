@@ -1,5 +1,9 @@
 import .logic_util .nat_util
 
+lemma fin.pos_of_elem {n} : fin n → 0 < n :=
+by { intro k, by_cases n = 0, rw [h] at k,
+     exact k.elim0, exact nat.pos_of_ne_zero h, }
+
 def fin.glue {A} {n m} (f : fin n → A) (g : fin m → A) : fin (n + m) → A :=
 λ k, if h : k.val < n
      then f ⟨k.val, h⟩
@@ -72,6 +76,12 @@ lemma fin.restrict_glue_comm {A} {n m : ℕ}
   : ∀ (f : fin n → A) (g  : fin (nat.succ m) → A),
     fin.restrict (fin.glue f g) = fin.glue f (fin.restrict g) :=
   by intros; refl
+
+def fin.restrict_many {A} (n m) (f : fin (n + m) → A) : fin n → A :=
+λ k, f ⟨k.val, nat.lt_of_lt_of_le k.is_lt (nat.le_add_right n m)⟩
+
+def fin.tail {A} (n m) (f : fin (n + m) → A) : fin m → A :=
+λ k, f ⟨n + k.val, nat.add_lt_add_left k.is_lt n⟩
 
 def fin.fun_omit {A : Type _} {n} (k : nat) (f : fin (nat.succ n) → A) : fin n → A :=
 λ m, if hmk : m.val < k
@@ -422,4 +432,63 @@ begin
   cases hA with f hA, cases hA with f_i f_s,
   cases hB with g hB, cases hB with g_i g_s,
   existsi (fin.glue f g), apply union_size'; assumption
+end
+
+def fin.square_to_line {n m} : fin n × fin m → fin (n * m) :=
+λ p, fin.mk (p.fst.val + n * p.snd.val) $
+     have h1 : 0 < m - p.snd.val,
+     from nat.sub_pos_of_lt p.snd.is_lt,
+     have p.fst.val < n * (m - p.snd.val),
+     by { apply nat.lt_of_lt_of_le p.fst.is_lt,
+          transitivity n * 1, rw mul_one,
+          apply nat.mul_le_mul_left, exact h1 },
+     have p.fst.val < n*m - n*p.snd.val,
+     from nat.mul_sub_left_distrib n m p.snd.val ▸ this,
+     have p.fst.val + n*p.snd.val < n*m - n*p.snd.val + n*p.snd.val,
+     from nat.add_lt_add_right this _,
+     by { rw nat.sub_add_cancel at this, assumption,
+          apply nat.mul_le_mul_left, apply le_of_lt, exact p.snd.is_lt }
+
+def fin.line_to_square {n m} : fin (n * m) → fin n × fin m :=
+λ k, prod.mk (fin.mk (k.val % n) $ nat.mod_lt k.val (pos_of_prod_pos_l $ fin.pos_of_elem k))
+             $ fin.mk (k.val / n)
+             $ iff.mpr (nat.div_lt_iff_lt_mul k.val m 
+                       $ pos_of_prod_pos_l $ fin.pos_of_elem k)
+             $ mul_comm n m ▸ k.is_lt
+
+lemma line_to_square.iso {n m}
+  : ∀ (x : fin n) (y : fin m),
+    fin.line_to_square
+    (fin.square_to_line (x, y))
+    = (x, y) :=
+begin
+  intros, dsimp [fin.square_to_line, fin.line_to_square],
+  congr; apply fin.eq_of_veq; simp,
+  { apply nat.mod_eq_of_lt x.is_lt },
+  { induction y.val,
+    { apply nat.div_eq_of_lt x.is_lt },
+    { rw [nat.mul_succ, ← add_assoc],
+      rw nat.div_eq_sub_div (fin.pos_of_elem x),
+      rw [nat.add_sub_cancel, nat.add_one], congr,
+      assumption, apply nat.le_add_left } }
+end
+
+lemma square_to_line.iso {n m}
+  : ∀ (p : fin (n * m)),
+    fin.square_to_line
+    (fin.line_to_square p)
+    = p :=
+begin
+  intros, dsimp [fin.square_to_line, fin.line_to_square],
+  apply fin.eq_of_veq, simp,
+  apply nat.mod_add_div
+end
+
+lemma square_line_iso {n m}
+  : function.left_inverse (@fin.line_to_square n m) fin.square_to_line
+  ∧ function.left_inverse (@fin.square_to_line n m) fin.line_to_square :=
+begin
+  constructor,
+  { intros p, cases p, apply line_to_square.iso },
+  { intros p, apply square_to_line.iso }
 end

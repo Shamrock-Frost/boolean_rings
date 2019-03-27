@@ -25,3 +25,25 @@ end
 
 def ge_if_not_lt {n k : ℕ} (h : ¬ (n < k)) : n ≥ k :=
 by { cases nat.lt_or_ge n k, exfalso, exact h h_1, exact h_1 }
+
+lemma pos_of_prod_pos_l {n m : ℕ} : 0 < n * m → 0 < n :=
+begin
+  intro h, apply decidable.by_contradiction, intro h',
+  have : n = 0,
+  { cases nat.lt_trichotomy n 0,
+    { exfalso, apply nat.not_lt_zero _ h_1 },
+    { cases h_1, assumption, trivial } },
+  rw [this, zero_mul] at h, apply nat.lt_irrefl _ h,
+end
+
+lemma mod_of_add_multiple (n m k : ℕ) : (n + m * k) % m = n % m :=
+begin
+  induction k, simp,
+  { have : m ≤ m * nat.succ k_n,
+    { rw nat.mul_succ, apply nat.le_add_left },
+    rw nat.mod_eq_sub_mod (nat.le_trans this (nat.le_add_left _ _)),
+    rw nat.add_sub_assoc this,
+    rw (_ : m * nat.succ k_n - m = m * nat.succ k_n - m * 1),
+    rw ← nat.mul_sub_left_distrib, rw ← nat.add_one,
+    rw nat.add_sub_cancel, assumption, simp }
+end

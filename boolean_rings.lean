@@ -116,6 +116,158 @@ def sum_over : Π {n} (f : fin n → R), R
 | 0     f := 0
 | (n+1) f := sum_over (fin.restrict f) + f ⟨n, nat.lt_succ_self n⟩
 
+lemma sum_over.step {n} (f : fin (nat.succ n) → R)
+  : sum_over f = sum_over (fin.restrict f) + f ⟨n, nat.lt_succ_self n⟩
+  := rfl
+
+lemma sum_over_split (n m) :
+  ∀ (f : fin (n + m) → R),
+    sum_over f =
+    sum_over (fin.restrict_many n m f) + sum_over (fin.tail n m f) :=
+begin
+  induction m; intro f;
+  simp [fin.restrict_many, fin.tail, sum_over],
+  { congr, funext, congr, apply fin.eq_of_veq, refl },
+  case nat.succ : m ih { 
+    rw [add_comm (f ⟨n+m, _⟩), ← add_assoc],
+    congr, apply ih }
+end
+
+lemma sum_over_eq_zero {n} : @sum_over n (λ _, 0) = 0 :=
+by { induction n, refl, dsimp [sum_over], rw add_zero, apply n_ih }
+
+lemma sum_over_omit {n} (f : fin (nat.succ n) → R)
+  : ∀ k : fin (nat.succ n),
+    sum_over f = sum_over (fin.fun_omit k.val f) + f k :=
+begin
+  revert f, induction n; intros f k,
+  { dsimp [sum_over], congr, apply fin.eq_of_veq,
+    symmetry, apply nat.eq_zero_of_le_zero,
+    exact nat.le_of_succ_le_succ k.is_lt },
+  case nat.succ : n ih {
+    cases (_ : k.val < nat.succ n ∨ k.val = nat.succ n),
+    { rw sum_over.step, rw ih _ ⟨k.val, h⟩,
+      dsimp [sum_over], rw [add_assoc, add_assoc, add_comm (fin.restrict _ _)],
+      congr, dsimp [fin.fun_omit], rw [dif_neg _],
+      intro h', apply nat.not_self_lt_lt_succ_self h' h,
+      simp [fin.restrict], congr, apply fin.eq_of_veq, refl },
+    { rw h, rw (_ : f k = f ⟨nat.succ n, nat.lt_succ_self _⟩),
+      dsimp [sum_over], congr, apply restrict_is_omit_n,
+      rw restrict_is_omit_n, congr, apply fin.eq_of_veq, exact h },
+    apply or.resolve_right, rw or_assoc,
+    exact nat.lt_trichotomy k.val (nat.succ n),
+    intro h', apply nat.not_self_lt_lt_succ_self h' k.is_lt }
+end
+
+lemma sum_over_nonzero {n} (f : fin n → R)
+  : ∀ {m} (g : fin m → R),
+    (∀ x y, f x ≠ 0 → f x = f y → x = y)
+    → function.injective g
+    → fun.im g = { x ∈ fun.im f | x ≠ 0 }
+    → sum_over f = sum_over g :=
+begin
+  induction n; intros m g f_i g_i h,
+  { intros, cases m, simp [sum_over],
+    let k : fin m.succ := ⟨0, nat.zero_lt_succ m⟩,
+    have : g k ∈ fun.im g := ⟨k, rfl⟩,
+    rw h at this, cases this.left, exact w.elim0 },
+  case nat.succ : n ih {
+    dsimp [sum_over],
+    cases prop_decidable (f ⟨n, nat.lt_succ_self n⟩ = 0),
+    tactic.swap,
+    { rw h_1, rw add_zero, apply ih (fin.restrict f) g _ g_i, rw h,
+      funext, apply propext, constructor; intro hx;
+      refine and.intro _ hx.right; cases hx.left with k hk,
+      { have : k.val < n,
+        { cases (nat.lt_trichotomy k.val n), assumption,
+          { exfalso, cases h_2,
+            { apply hx.right, rw ← hk,
+              rw ← h_1, congr, apply fin.eq_of_veq,
+              assumption },
+            { apply nat.not_self_lt_lt_succ_self h_2 k.is_lt } } },
+        existsi fin.mk k.val this,
+        dsimp [fin.restrict], rw ← hk,
+        congr, apply fin.eq_of_veq, refl },
+      { existsi (fin.mk k.val (lt_trans k.is_lt $ nat.lt_succ_self n)),
+        rw ← hk, refl },
+      { dsimp [fin.restrict], intros, apply fin.eq_of_veq,
+        apply @fin.veq_of_eq (nat.succ n) ⟨x.val, nat.lt_trans x.is_lt (nat.lt_succ_self n)⟩
+                                          ⟨y.val, nat.lt_trans y.is_lt (nat.lt_succ_self n)⟩,
+        apply f_i; assumption } },
+    { have : f ⟨n, nat.lt_succ_self n⟩ ∈ fun.im g,
+      { rw h, refine and.intro _ h_1,
+        existsi fin.mk n (nat.lt_succ_self n), refl },
+      cases this with k hk, cases m, { exact k.elim0 },
+      rw sum_over_omit g k, apply congr,
+      rw ih _ (fin.fun_omit k.val g), 
+      { dsimp [fin.restrict], intros, apply fin.eq_of_veq,
+        apply @fin.veq_of_eq (nat.succ n) ⟨x.val, nat.lt_trans x.is_lt (nat.lt_succ_self n)⟩
+                                          ⟨y.val, nat.lt_trans y.is_lt (nat.lt_succ_self n)⟩,
+        apply f_i; assumption },
+      { apply omit_inj_if_fun_inj, assumption },
+      { rw im_omit _ _ _ g_i, rw hk,
+        transitivity ({x : R | x ∈ fun.im f ∧ x ≠ 0} ∖ { f ⟨n, nat.lt_succ_self n⟩ }),
+        { rw h, refl },
+        { rw elem_singleton, funext x, apply propext,
+          constructor; intro h'; cases h',
+          { constructor, cases h'_left.left,
+            have : w.val < n,
+            cases nat.lt_trichotomy w.val n, assumption,
+            cases h_3, exfalso, apply h'_right,
+            rw ← h_2, congr, apply fin.eq_of_veq, exact h_3,
+            exfalso, apply nat.not_self_lt_lt_succ_self h_3 w.is_lt,
+            existsi fin.mk w.val this, rw ← h_2,
+            dsimp [fin.restrict], congr, apply fin.eq_of_veq,
+            refl, exact h'_left.right },
+          { constructor, constructor, cases h'_left, 
+            existsi fin.mk h'_left_w.val (nat.lt_trans h'_left_w.is_lt $ nat.lt_succ_self n),
+            rw ← h'_left_h, dsimp [fin.restrict], congr,
+            assumption, intro h', cases h'_left,
+            apply nat.lt_irrefl n, rw (_ : n < n ↔ h'_left_w.val < n),
+            exact h'_left_w.is_lt, rw (_ : h'_left_w.val = n),
+            dsimp [fin.restrict] at h'_left_h h'_right,
+            apply @fin.veq_of_eq (nat.succ n) ⟨h'_left_w.val, nat.lt_trans h'_left_w.is_lt (nat.lt_succ_self n)⟩
+                                              ⟨n, nat.lt_succ_self n⟩,
+            apply f_i, rw ← h'_left_h at h'_right,
+            assumption, rw h'_left_h, assumption } } },
+      { symmetry, assumption } } }
+end
+
+def sum_over_sum {n} : ∀ (f g : fin n → R),
+  sum_over (λ k, f k + g k) = sum_over f + sum_over g :=
+begin
+  induction n; intros; simp [sum_over],
+  rw [← add_assoc, add_comm],
+  rw [← add_assoc (sum_over (fin.restrict f))],
+  apply congr_fun (congr_arg _ $ n_ih _ _)
+end
+
+lemma sum_over_tail {n m} (h : fin n × fin (nat.succ m) → R)
+  : sum_over
+    (fin.tail (nat.mul n m) n
+      (λ (p : fin (n * nat.succ m)),
+        h (fin.line_to_square p)))
+  = sum_over (λ k : fin n, h (k, ⟨m, nat.lt_succ_self m⟩)) :=
+begin
+  induction m,
+  { congr, funext, 
+    cases k, dsimp [fin.tail, fin.line_to_square],
+    congr; rw (_ : nat.mul n 0 + k_val = k_val),
+    apply nat.mod_eq_of_lt k_is_lt, tactic.swap,
+    apply nat.div_eq_of_lt k_is_lt,
+    all_goals { simp [nat.mul] } },
+  case nat.succ : m ih {
+    dsimp [fin.tail, fin.line_to_square],
+    congr, funext, congr,
+    { apply fin.eq_of_veq,
+      simp [nat.mul], transitivity k.val % n,
+      apply mod_of_add_multiple, apply nat.mod_eq_of_lt k.is_lt },
+    { rw nat.div_eq_of_lt_le, rw mul_comm, apply nat.le_add_right,
+      suffices : n * m + n + k.val < n * m + n + n,
+      { rw nat.mul_comm, assumption },
+      apply nat.add_lt_add_left, exact k.is_lt } }
+end
+
 section same_embedding
 universes u v
 
@@ -342,6 +494,7 @@ lemma heq_transport {A : Type u} (B : A → Type v) {a b : A} (p : a = b)
 end transport
 section transport_inj
 universes u v w
+
 lemma inj_implies_transport_inj {A : Type u} (B : A → Type v)
                                 (C : A → Type w) {a a' : A}
                                 (p : a = a')
@@ -349,7 +502,88 @@ lemma inj_implies_transport_inj {A : Type u} (B : A → Type v)
     function.injective f
     → function.injective (eq.transport (λ x, B x → C x) p f) :=
 by { cases p, simp [eq.transport], intro, exact id }
+
+lemma heq.funext1 {A : Type u} (B : Type v)
+                              (C : A → Type w) {a a' : A}
+                              (p : a = a')
+  : ∀ (f : B → C a) (g : B → C a'), (∀ x, f x == g x) → f == g :=
+by { cases p, intros, apply heq_of_eq, funext, apply eq_of_heq (a_1 x) }
+
+lemma heq.funext {A : Type u} (B : A → Type v)
+                              (C : Type w) {a a' : A}
+                              (p : a = a')
+  : (B a → false) → ∀ (f : B a → C) (g : B a' → C), f == g :=
+by { cases p, intros,
+     rw (_ : f = (λ b, false.elim (a_1 b))),
+     rw (_ : g = (λ b, false.elim (a_1 b))),
+     all_goals { funext, exfalso, exact a_1 x }, }
+
+lemma sigma_eq_of_heq {A : Type u} (B : A → Type v)
+                    : ∀ (a a' : A) (p : a = a')
+                        (b : B a) (b' : B a'),
+                      b == b' → sigma.mk a b = sigma.mk a' b' :=
+by { intros, congr; assumption }
+
 end transport_inj
+
+lemma mul_sum_over_left 
+  : ∀ {n} (f : fin n → R) a,
+    a * sum_over f = sum_over (λ k, a * f k) :=
+begin
+  intros n, induction n; intros,
+  { simp [sum_over] },
+  case nat.succ : m ih { 
+    simp [sum_over],
+    rw left_distrib, congr, apply ih }
+end
+
+lemma mul_sum_over_right 
+  : ∀ {n} (f : fin n → R) a,
+    sum_over f * a = sum_over (λ k, f k * a) :=
+begin
+  intros n, induction n; intros,
+  { simp [sum_over] },
+  case nat.succ : m ih { 
+    simp [sum_over],
+    rw right_distrib, congr, apply ih }
+end
+
+lemma mul_sum_eq_double_sum
+  : ∀ {n m} (f : fin n → R) (g : fin m → R),
+    sum_over f * sum_over g
+    = sum_over (λ i : fin n,
+        sum_over (λ j : fin m, 
+          f i * g j)) := 
+by { intros, rw mul_sum_over_right, congr, funext, rw mul_sum_over_left }
+
+-- I don't need this but it's neat ¯\_(ツ)_/¯
+lemma mul_sum_eq_linear_sum
+  : ∀ {n m} (f : fin n → R) (g : fin m → R),
+    sum_over f * sum_over g
+    = sum_over (λ p : fin (n * m),
+                let p' := fin.line_to_square p
+                in f p'.fst * g p'.snd) :=
+begin
+  intros, rw mul_sum_eq_double_sum,
+  induction m,
+  { transitivity (0 : R), apply sum_over_eq_zero ,
+    rw (_ : (λ (p : fin (n * 0)), let p' : fin n × fin 0 := fin.line_to_square p in f (p'.fst) * g (p'.snd))
+          = (λ (p : fin (n * 0)), 0)),
+    rw sum_over_eq_zero , funext, rw mul_zero at p, 
+    apply p.elim0 },
+  case nat.succ : m ih_m {
+    simp [sum_over], 
+    rw sum_over_sum,
+    rw [sum_over_split], 
+    apply congr,
+    { apply congr_arg,
+      dsimp [fin.restrict_many, fin.restrict],
+      rw ih_m, refl, },
+    { rw (_ : (λ (p : fin (n * nat.succ m)), f ((fin.line_to_square p).fst) * g ((fin.line_to_square p).snd))
+            = (λ (p : fin (n * nat.succ m)), 
+                (λ k : fin n × fin (nat.succ m), f (k.fst) * g (k.snd)) (fin.line_to_square p))),
+      rw sum_over_tail, refl } }
+end
 
 lemma sum_of_unique [comm_ring R] (h : finite R) (S : set R)
   : ∀ n (f : fin n → R), 
@@ -399,8 +633,48 @@ instance pseudo_subset_order (is_bool : is_boolean R)
          ... = b     : h2
 }
 
+lemma pseudo_subset_order.lt_of_le_and_ne (is_bool : is_boolean R)
+  : ∀ x y : R, (@partial_order.le R (pseudo_subset_order is_bool) x y)
+             → x ≠ y 
+             → (@partial_order.lt R (pseudo_subset_order is_bool) x y) :=
+begin
+  intros, constructor, assumption, intro h, apply a_1,
+  apply @partial_order.le_antisymm R (pseudo_subset_order is_bool); assumption
+end
+
+def orthongal (x y : R) := x * y = 0
+
 def min_nonzero.set (is_bool : is_boolean R) :=
-  { x : R | x ≠ 0 ∧ (∀ y, x*y = x ∨ x*y = 0) }
+  { x : R | x ≠ 0 ∧
+          (∀ y, (@partial_order.le R (pseudo_subset_order is_bool) x y)
+              ∨ orthongal x y) }
+
+lemma min_nonzero_def2 (is_bool : is_boolean R)
+  : min_nonzero.set is_bool
+  = { x : R | x ≠ 0 ∧ (∀ y, (@partial_order.lt R (pseudo_subset_order is_bool) y x) → y = 0) } :=
+begin
+  funext, apply propext, constructor,
+  { intro h, cases h with h_ne_zero h_le_or_orthogonal,
+    constructor, assumption, intros y hy,
+    cases h_le_or_orthogonal y,
+    { exfalso, apply hy.right, assumption },
+    { transitivity x * y, symmetry, cases hy,
+      rw boolean_ring.comm is_bool x y,
+      all_goals {assumption} } },
+  { intro h, cases h with h_ne_zero h_minimal,
+    apply and.intro h_ne_zero,
+    intro y, 
+    have h1 : @partial_order.le R (pseudo_subset_order is_bool) (x * y) x,
+    { refine (_ : (x * y)*x = x * y),
+      rw boolean_ring.comm is_bool (x*y) x,
+      rw ← mul_assoc, rw is_bool },
+    cases (prop_decidable $ @partial_order.le R (pseudo_subset_order is_bool) x (x * y)),
+    { apply or.inr, apply h_minimal,
+      constructor; assumption },
+    { apply or.inl,
+      apply @partial_order.le_antisymm R (pseudo_subset_order is_bool);
+      assumption } }
+end
 
 def min_nonzero.type (is_bool : is_boolean R) := 
   subtype (min_nonzero.set is_bool)
@@ -584,6 +858,135 @@ lemma pset_embed_preserves_zero : min_nonzero.pset_embed 0 = 0 :=
 begin
   apply add_group.homomorphism_preserves_zero,
   exact pset_embed_preserves_add
+end
+set_option trace.check true
+
+lemma pset_embed_preserves_mul
+  : ∀ S S', min_nonzero.pset_embed (S * S') 
+          = min_nonzero.pset_embed S * min_nonzero.pset_embed S' :=
+begin
+  intros,
+  cases (sets_of_finite_types_are_finite _ (subtypes_of_finite_types_are_finite _ is_finite _) S) with n hn,
+  cases hn with f hn, cases hn with f_i f_s,
+  cases (sets_of_finite_types_are_finite _ (subtypes_of_finite_types_are_finite _ is_finite _) S') with m hm,
+  cases hm with g hm, cases hm with g_i g_s,
+  rw pset_embed_eq_sum_over S f, any_goals { assumption },
+  rw pset_embed_eq_sum_over S' g, any_goals { assumption },
+  rw mul_sum_over_right,
+  have h1 : ∀ i j, f i ∉ S' → (f i).val * (g j).val = 0,
+  { intros, apply min_nonzero.orthogonal, intro h,
+    apply a, rw [h, g_s], existsi j, refl },
+  have h1 : ∀ i, f i ∉ S' → (f i).val * sum_over (λ j, (g j).val) = 0,
+  { intros, rw mul_sum_over_left, rw ← sum_over_eq_zero ,
+    congr, funext, apply h1, assumption },
+  have h2 : ∀ i, f i ∈ S' →
+               ∃ j, (f i).val = (g j).val
+                  ∧ ∀ j' ≠ j, (f i).val ≠ (g j').val,
+  { intros, rw g_s at a, cases a with j hj,
+    existsi j, constructor, symmetry, congr, assumption,
+    rw ← hj, intro j', apply mt, intro, apply g_i,
+    symmetry, apply subtype.eq, assumption },
+  have orthog_contrapos
+    : Π {a b : min_nonzero.type is_bool},
+        ¬orthongal a.val b.val → a = b,
+    { intros, apply classical.by_contradiction,
+      intro, apply a_1, apply min_nonzero.orthogonal,
+      assumption },
+  have h2 : ∀ i, f i ∈ S' → (f i).val * sum_over (λ j, (g j).val) = (f i).val,
+  { rw g_s, intros i h, specialize h2 i (eq.substr g_s h),
+    cases h2 with j h2, cases h2 with hij hneq,
+    rw mul_sum_over_left,
+    rw sum_over_nonzero _ (λ _ : fin 1, (f i).val),
+    { simp [sum_over] },
+    { intros, apply g_i,
+      transitivity (f i), rw boolean_ring.comm is_bool at a, apply orthog_contrapos a,
+      have a' : (f i).val * (g y).val ≠ 0,
+      rw ← a_1, assumption,
+      apply orthog_contrapos a', },
+    { suffices : ∀ x : fin 1, x.val = 0,
+      intros x y _, apply fin.eq_of_veq,
+      transitivity 0, apply this, symmetry, apply this,
+      intros, cases x, simp, apply nat.eq_zero_of_le_zero,
+      apply nat.le_of_succ_le_succ, exact x_is_lt },
+    { simp [fun.im],
+      transitivity { y | (f i).val = y },
+      { funext, apply propext, constructor,
+        { intro e, cases e, assumption },
+        { intro h, rw (_ : (f i).val = b),
+          existsi fin.mk 0 nat.zero_lt_one, refl, assumption } },
+      { rw hij, funext, apply propext, constructor,
+        { intro h, rw (_ : y = (g j).val),
+          constructor, existsi j, apply is_bool,
+          exact (g j).property.left, symmetry, assumption },
+        { intro h, cases h.left, rw ← h_1,
+          have : (g j).val * (g w).val ≠ 0, rw ← h_1 at h, apply h.right,
+          rw orthog_contrapos this,
+          apply eq.symm, apply is_bool (g w).val } } } },
+  have h2' : ∀ i, f i ∉ S' → (f i).val * sum_over (λ j, (g j).val) = 0,
+  { intros, rw mul_sum_over_left, rw ← @sum_over_eq_zero m,
+    congr, funext, apply min_nonzero.orthogonal, intro h,
+    apply a, rw h, rw g_s, existsi k, refl },
+  transitivity sum_over (λ (i : fin n),
+                @ite (f i ∈ (S * S')) (prop_decidable _) R
+                     (sum_over (λ (j : fin m), (f i).val * (g j).val))
+                     0),
+  { cases (sets_of_finite_types_are_finite _ (subtypes_of_finite_types_are_finite _ is_finite _) (S*S')) with k hk,
+    cases hk with in_p hk, cases hk with in_p_i in_p_s, 
+    rw pset_embed_eq_sum_over _ in_p in_p_i in_p_s,
+    symmetry, apply sum_over_nonzero, 
+    { intros x y hnez_x hxy, 
+      apply f_i, apply subtype.eq,
+      transitivity (@ite (f x ∈ S * S') (prop_decidable _) R (sum_over (λ (j : fin m), (f x).val * (g j).val)) 0),
+      { have mem1_x : f x ∈ S',
+        { apply classical.by_contradiction, intro h,
+          apply hnez_x, rw if_neg _, intro h', exact h h'.right, },
+        have mem2_x : f x ∈ S,
+        { rw f_s, existsi x, refl },
+        have mem3_x : f x ∈ S * S' := ⟨mem2_x, mem1_x⟩,
+        rw [if_pos _, ← mul_sum_over_left], symmetry, apply h2, exact mem1_x, exact mem3_x },
+      transitivity (@ite (f y ∈ S * S') (prop_decidable _) R (sum_over (λ (j : fin m), (f y).val * (g j).val)) 0),
+      assumption,
+      { have hnez_y : @ite (f y ∈ S * S') (prop_decidable _) _ (sum_over (λ (j : fin m), (f y).val * (g j).val)) 0 ≠ 0 := hxy ▸ hnez_x,
+        have mem1_y : f y ∈ S',
+        { apply classical.by_contradiction, intro h,
+          apply hnez_y, rw if_neg _, intro h', exact h h'.right, },
+        have mem2_y : f y ∈ S,
+        { rw f_s, existsi y, refl },
+        have mem3_y : f y ∈ S * S' := ⟨mem2_y, mem1_y⟩,
+        rw [if_pos _, ← mul_sum_over_left], apply h2, exact mem1_y, exact mem3_y }},
+    { intros x y hxy, apply in_p_i,
+      apply subtype.eq, exact hxy },
+    { transitivity { v | ∃ y : min_nonzero.type is_bool, y ∈ fun.im in_p ∧ v = y.val },
+      { funext, apply propext, constructor; intro h; cases h,
+        { existsi in_p h_w, constructor,
+          existsi h_w, refl, symmetry, assumption },
+        { cases h_h, cases h_h_left, existsi h_h_left_w,
+          rw [h_h_right, ← h_h_left_h] } },
+      transitivity { v | ∃ y : min_nonzero.type is_bool, y ∈ S * S' ∧ v = y.val },
+      { funext, apply propext, constructor;
+        intro h; cases h; existsi h_w; refine and.intro _ h_h.right,
+        { rw in_p_s, exact h_h.left }, { rw ← in_p_s, exact h_h.left } },
+      { funext, apply propext, constructor; intro h,
+        { cases h, cases h_h, subst h_h_right, constructor,
+          { have : h_w ∈ fun.im f := f_s ▸ h_h_left.left, cases this,
+            existsi this_w, simp, subst this_h,
+            rw @if_pos _ (prop_decidable _) h_h_left,
+            rw ← mul_sum_over_left, apply h2, exact h_h_left.right },
+          exact h_w.property.left }, 
+        { cases h, cases h_left, subst h_left_h, simp at h_right,
+          have : f h_left_w ∈ S * S',
+          { apply classical.by_contradiction, intro h,
+            rw if_neg _ at h_right, apply h_right rfl,
+            assumption },
+          existsi f h_left_w, apply and.intro this,
+          simp, rw if_pos _, rw ← mul_sum_over_left,
+          apply h2, exact this.right, exact this } } } },
+  { congr, funext, cases prop_decidable (f i ∈ S * S'),
+    { rw if_neg _, rw h2',
+      { intro h', apply h, refine and.intro  _ h',
+        rw f_s, existsi i, refl },
+      { exact h } },
+    { rw if_pos, rw mul_sum_over_left, exact h } }
 end
 
 lemma pset_embed_inj : function.injective min_nonzero.pset_embed :=
