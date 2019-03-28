@@ -92,6 +92,9 @@ end monoid
 
 section ring
 
+lemma FOIL {R} [ring R] : ∀ a b c d : R, (a + b) * (c + d) = a*c + a*d + b*c + b*d :=
+by { intros, rw [left_distrib, right_distrib, right_distrib], ac_refl }
+
 @[reducible]
 def {u v} ring.is_homomorphism
   {R : Type u} {S : Type v} [ring R] [ring S]

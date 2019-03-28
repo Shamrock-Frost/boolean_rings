@@ -7,11 +7,6 @@ def is_boolean (R) [ring R] : Prop := ∀ a : R, a * a = a
 section
 parameters {R : Type _} [ring R]
 
-def is_ring : ring R := by { exact _inst_1 }
-
-lemma FOIL : ∀ a b c d : R, (a + b) * (c + d) = a*c + a*d + b*c + b*d :=
-by { intros, rw [left_distrib, right_distrib, right_distrib], ac_refl }
-
 lemma boolean_ring.has_char_2 (is_bool : is_boolean R) : ring.one R + ring.one R = 0 :=
 begin
   suffices : (ring.one R + ring.one R) + (ring.one R + ring.one R) 
@@ -72,13 +67,21 @@ begin
   rw [h3, h4], assumption
 end
 
-instance boolean_ring_is_comm_ring (is_bool : is_boolean R)
-  : comm_ring R := { mul_comm := boolean_ring.comm is_bool, ..is_ring }
+class boolean_ring (R) extends comm_ring (R) :=
+(is_bool : is_boolean R)
+
+lemma is_bool {R'} [boolean_ring R'] : ∀ a : R', a*a = a := boolean_ring.is_bool R'
+
+def boolean_ring.mk2 (h : is_boolean R) : boolean_ring R := {
+  mul_comm := boolean_ring.comm h,
+  is_bool := h, 
+  .._inst_1
+}
 
 open classical
 
-instance pset.ring (T) : comm_ring (set T) :=
-{ comm_ring .
+instance pset.ring (T) : boolean_ring (set T) :=
+{ boolean_ring .
   add := (Δ),
   mul := (∩),
   one := set.univ,
@@ -102,15 +105,9 @@ instance pset.ring (T) : comm_ring (set T) :=
   right_distrib := by { intros, rw (_ : set.inter (a Δ b) c = c ∩ (a Δ b)),
                         rw (_ : set.inter a c = c ∩ a), rw (_ : set.inter b c = c ∩ b),
                         apply left_distrib_inter_symm_diff,
-                        all_goals { rw inter_comm, refl }, }
+                        all_goals { rw inter_comm, refl } },
+  is_bool := by intros; apply inter_self
 }
-
-theorem pset.is_boolean : ∀ T, is_boolean (set T) :=
-begin
-  unfold is_boolean, intros,
-  rw (_ : a * a = a ∩ a),
-  apply inter_self, refl
-end
 
 def sum_over : Π {n} (f : fin n → R), R
 | 0     f := 0
@@ -617,11 +614,20 @@ begin
   symmetry, congr; assumption
 end
 
-instance pseudo_subset_order (is_bool : is_boolean R)
+end
+
+section 
+
+local attribute [instance] classical.prop_decidable
+
+parameters {R : Type _} [boolean_ring R] (is_finite : finite R)
+
+instance pseudo_subset_order
   : partial_order R :=
 { partial_order .
   le := λ x y, x*y = x,
-  le_refl := by { intro, simp [(≤)], rw is_bool a },
+  le_refl := by { intro, simp [(≤)], 
+  rw is_bool a },
   le_trans := by { simp [(≤)], intros a b c hab hbc, 
     exact calc a * c = (a * b) * c : by { rw hab }
                ...   = a * (b * c) : mul_assoc _ _ _
@@ -629,29 +635,17 @@ instance pseudo_subset_order (is_bool : is_boolean R)
                ...   = a           : hab },
   le_antisymm := λ a b h1 h2,
     calc a   = a * b : eq.symm h1
-         ... = b * a : boolean_ring.comm is_bool _ _
+         ... = b * a : mul_comm _ _
          ... = b     : h2
 }
 
-lemma pseudo_subset_order.lt_of_le_and_ne (is_bool : is_boolean R)
-  : ∀ x y : R, (@partial_order.le R (pseudo_subset_order is_bool) x y)
-             → x ≠ y 
-             → (@partial_order.lt R (pseudo_subset_order is_bool) x y) :=
-begin
-  intros, constructor, assumption, intro h, apply a_1,
-  apply @partial_order.le_antisymm R (pseudo_subset_order is_bool); assumption
-end
+def orthogonal (x y : R) := x * y = 0
 
-def orthogonal  (x y : R) := x * y = 0
+def min_nonzero.set :=
+  { x : R | x ≠ 0 ∧ (∀ y, x ≤ y ∨ orthogonal x y) }
 
-def min_nonzero.set (is_bool : is_boolean R) :=
-  { x : R | x ≠ 0 ∧
-          (∀ y, (@partial_order.le R (pseudo_subset_order is_bool) x y)
-              ∨ orthogonal  x y) }
-
-lemma min_nonzero_def2 (is_bool : is_boolean R)
-  : min_nonzero.set is_bool
-  = { x : R | x ≠ 0 ∧ (∀ y, (@partial_order.lt R (pseudo_subset_order is_bool) y x) → y = 0) } :=
+lemma min_nonzero_def2
+  : min_nonzero.set = { x : R | x ≠ 0 ∧ (∀ y, y < x → y = 0) } :=
 begin
   funext, apply propext, constructor,
   { intro h, cases h with h_ne_zero h_le_or_orthogonal,
@@ -659,58 +653,57 @@ begin
     cases h_le_or_orthogonal y,
     { exfalso, apply hy.right, assumption },
     { transitivity x * y, symmetry, cases hy,
-      rw boolean_ring.comm is_bool x y,
+      rw mul_comm,
       assumption' } },
   { intro h, cases h with h_ne_zero h_minimal,
     apply and.intro h_ne_zero,
     intro y, 
-    have h1 : @partial_order.le R (pseudo_subset_order is_bool) (x * y) x,
+    have h1 : (x * y) ≤ x,
     { refine (_ : (x * y)*x = x * y),
-      rw boolean_ring.comm is_bool (x*y) x,
+      rw mul_comm (x*y) x,
       rw ← mul_assoc, rw is_bool },
-    cases (prop_decidable $ @partial_order.le R (pseudo_subset_order is_bool) x (x * y)),
+    by_cases (x ≤ (x * y)),
+    { apply or.inl, apply le_antisymm; assumption },
     { apply or.inr, apply h_minimal,
-      constructor; assumption },
-    { apply or.inl,
-      apply @partial_order.le_antisymm R (pseudo_subset_order is_bool);
-      assumption } }
+      constructor; assumption }, }
 end
 
-def min_nonzero.type (is_bool : is_boolean R) := 
-  subtype (min_nonzero.set is_bool)
+lemma min_nonzero_def3 : min_nonzero.set = minimal (λ x, x ≠ 0) :=
+by { rw min_nonzero_def2, dsimp [minimal], funext x,
+     apply congr_arg (λ P, x ≠ 0 ∧ P),
+     apply propext, constructor; intros h y; specialize h y;
+     (`[rw ← classical.dne (y = 0)] <|> `[rw classical.dne (y = 0)]),
+     assumption' }
 
-lemma min_nonzero.orthogonal (is_bool : is_boolean R)
-  : ∀ (x y : min_nonzero.type is_bool), x ≠ y → x.val * y.val = 0 :=
+def min_nonzero.type := subtype min_nonzero.set
+
+lemma min_nonzero.orthogonal
+  : ∀ (x y : min_nonzero.type), x ≠ y → x.val * y.val = 0 :=
 begin
   dsimp [min_nonzero.type, min_nonzero.set], intros x y hxy,
   cases (x.property.right y.val); cases (y.property.right x.val),
   { exfalso, apply hxy, apply subtype.eq,
     transitivity x.val * y.val,
     symmetry, assumption,
-    rw boolean_ring.comm is_bool, assumption },
-  rw boolean_ring.comm is_bool,
-  assumption'
+    rw mul_comm, assumption },
+  rw mul_comm, assumption'
 end
 
-lemma min_nonzero.orthogonal_contrapositive {is_bool : is_boolean R}
-  : ∀ {a b : min_nonzero.type is_bool}, ¬orthogonal  a.val b.val → a = b :=
+lemma min_nonzero.orthogonal_contrapositive
+  : ∀ {a b : min_nonzero.type}, ¬orthogonal a.val b.val → a = b :=
 by { intros, apply classical.by_contradiction,
      intro, apply a_1, apply min_nonzero.orthogonal,
      assumption }
 
 section pset_embed
 
-parameters (is_bool : is_boolean R) (is_finite : finite R)
-
-def R_comm : comm_ring R := boolean_ring_is_comm_ring is_bool
-
 noncomputable
-def min_nonzero.pset_embed : set (min_nonzero.type is_bool) → R :=
- λ S, @sum_of R_comm is_finite (subset_of_subtype_to_subset S)
+def min_nonzero.pset_embed : set min_nonzero.type → R :=
+ λ S, sum_of is_finite (subset_of_subtype_to_subset S)
 
 lemma pset_embed_eq_sum_over :
-  ∀ (S : set (min_nonzero.type is_bool)) 
-    {n} (f : fin n → min_nonzero.type is_bool),
+  ∀ (S : set min_nonzero.type) 
+    {n} (f : fin n → min_nonzero.type),
   function.injective f
   → S = fun.im f
   → min_nonzero.pset_embed S
@@ -732,13 +725,13 @@ begin
 end
 
 lemma min_nonzero_orthogonal_set
-  : ∀ (S : set (min_nonzero.type is_bool)) (x0 : min_nonzero.type is_bool),
+  : ∀ (S : set min_nonzero.type) (x0 : min_nonzero.type),
     x0 ∉ S → x0.val * min_nonzero.pset_embed S = 0 :=
 begin
   intros S x0,
   have : set.finite S,
-  { apply sets_of_finite_types_are_finite,
-    apply subtypes_of_finite_types_are_finite,
+  { apply classical.sets_of_finite_types_are_finite,
+    apply classical.subtypes_of_finite_types_are_finite,
     assumption },
   cases this with size h, revert S,
   induction size; intros; cases h with f h; cases h with f_i f_s,
@@ -752,7 +745,7 @@ begin
       rw (_ : ({x ∈ S | x ≠ xn} x ↔ (fun.im f∖{f ⟨size, _⟩}) x)
             ↔ ((x ∈ S ∧ x ≠ xn) ↔ (fun.im f x ∧ x ∉ {f ⟨size, _⟩}))),
       tactic.swap, refl,
-      rw [elem_singleton, ( _ : x ∉ {y : min_nonzero.type is_bool | y = f ⟨size, _⟩}
+      rw [elem_singleton, ( _ : x ∉ {y : min_nonzero.type | y = f ⟨size, _⟩}
                               ↔ x ≠ f ⟨size, _⟩)],
       tactic.swap, refl,
       rw ← f_s, constructor; intro h; cases h;
@@ -762,7 +755,7 @@ begin
     rw (_ : fin.restrict (λ (n : fin (nat.succ size)), (f n).val)
           = (λ (n : fin size), (fin.restrict f n).val)),
     rw pset_embed_eq_sum_over { x ∈ S | x ≠ xn } f' at ih,
-    rw [add_zero, ← ih],
+    rw [zero_add, ← ih],
     { apply restrict_inj_if_fun_inj f f_i },
     { exact this },
     refl, existsi f',
@@ -782,13 +775,13 @@ lemma pset_embed_disj_union : ∀ A B, disjoint A B →
 begin
   intros A B h, 
   have : set.finite A,
-  { apply sets_of_finite_types_are_finite,
-    apply subtypes_of_finite_types_are_finite,
+  { apply classical.sets_of_finite_types_are_finite,
+    apply classical.subtypes_of_finite_types_are_finite,
     assumption },
   cases this with A_size hA, cases hA with f hA, cases hA with f_i f_s,
   have : set.finite B,
-  { apply sets_of_finite_types_are_finite,
-    apply subtypes_of_finite_types_are_finite,
+  { apply classical.sets_of_finite_types_are_finite,
+    apply classical.subtypes_of_finite_types_are_finite,
     assumption },
   cases this with B_size hB, cases hB with g hB, cases hB with g_i g_s,
   have := union_size' h f g f_i f_s g_i g_s,
@@ -801,8 +794,8 @@ begin
     rw pset_embed_eq_sum_over B g g_i g_s },
   { dunfold fin.glue, funext,
     by_cases h : n.val < A_size,
-    rw [dif_pos h, dif_pos h],
-    rw [dif_neg h, dif_neg h] }
+    rw [dif_pos _, dif_pos _]; assumption,
+    rw [dif_neg _, dif_neg _]; assumption }
 end
 
 lemma pset_embed_minus_eq_minus : ∀ S S', S ⊆ S' →
@@ -816,7 +809,7 @@ begin
                ... = min_nonzero.pset_embed S' - min_nonzero.pset_embed S
                    : by { rw this } },
   have h1 : set.finite S',
-  { apply sets_of_finite_types_are_finite,
+  { apply classical.sets_of_finite_types_are_finite,
     apply classical.subtypes_of_finite_types_are_finite R is_finite },
   have h2 : set.finite (S' ∖ S),
   { apply classical.subsets_of_finite_sets_are_finite (minus_is_subset _ _) h1 },
@@ -830,7 +823,7 @@ begin
   rw @minus_subset_union_subset _ _ _ (λ _, classical.prop_decidable _) hsub at this,
   cases this with f_i f_s,
   rw ← pset_embed_disj_union,
-  { congr, apply @minus_subset_union_subset _ _ _ (λ _, prop_decidable _) hsub },
+  { congr, apply minus_subset_union_subset, assumption },
   apply minus_disj
 end
 
@@ -845,7 +838,7 @@ begin
       { rw pset_embed_disj_union (S'∖S),
         { rw ← add_assoc,
           rw ← pset_embed_disj_union,
-          rw @union_decomp_l _ S S' (λ _, prop_decidable _),
+          rw union_decomp_l,
           rw sub_eq_add_neg, congr,
           symmetry, rw inter_comm,
           apply boolean_ring.neg_eq_self is_bool,
@@ -855,7 +848,7 @@ begin
           apply inter_subset_r,
           rw disjoint_symm,
           apply minus_disj } },
-      congr, exact @decomp _ S' S (λ _, prop_decidable _) },
+      congr, exact decomp S' S },
     exact (λ x hx, or.inl $ and.left hx) },
   refl
 end
@@ -872,9 +865,9 @@ lemma pset_embed_preserves_mul
           = min_nonzero.pset_embed S * min_nonzero.pset_embed S' :=
 begin
   intros,
-  cases (sets_of_finite_types_are_finite _ (subtypes_of_finite_types_are_finite _ is_finite _) S) with n hn,
+  cases (classical.sets_of_finite_types_are_finite _ (classical.subtypes_of_finite_types_are_finite _ is_finite _) S) with n hn,
   cases hn with f hn, cases hn with f_i f_s,
-  cases (sets_of_finite_types_are_finite _ (subtypes_of_finite_types_are_finite _ is_finite _) S') with m hm,
+  cases (classical.sets_of_finite_types_are_finite _ (classical.subtypes_of_finite_types_are_finite _ is_finite _) S') with m hm,
   cases hm with g hm, cases hm with g_i g_s,
   rw pset_embed_eq_sum_over S f, any_goals { assumption },
   rw pset_embed_eq_sum_over S' g, any_goals { assumption },
@@ -899,7 +892,7 @@ begin
     rw sum_over_nonzero _ (λ _ : fin 1, (f i).val),
     { simp [sum_over] },
     { intros, apply g_i,
-      transitivity (f i), rw boolean_ring.comm is_bool at a,
+      transitivity (f i), rw mul_comm at a,
       apply min_nonzero.orthogonal_contrapositive a,
       have a' : (f i).val * (g y).val ≠ 0,
       rw ← a_1, assumption,
@@ -920,20 +913,20 @@ begin
           rw min_nonzero.orthogonal_contrapositive this,
           apply eq.symm, apply is_bool (g w).val } } } },
   have h2' : ∀ i, f i ∉ S' → (f i).val * sum_over (λ j, (g j).val) = 0,
-  { intros, rw mul_sum_over_left, rw ← @sum_over_eq_zero m,
+  { intros, rw mul_sum_over_left, rw ← sum_over_eq_zero,
     congr, funext, apply min_nonzero.orthogonal, intro h,
     apply a, rw h, rw g_s, existsi k, refl },
   transitivity sum_over (λ (i : fin n),
-                @ite (f i ∈ (S * S')) (prop_decidable _) R
-                     (sum_over (λ (j : fin m), (f i).val * (g j).val))
-                     0),
-  { cases (sets_of_finite_types_are_finite _ (subtypes_of_finite_types_are_finite _ is_finite _) (S*S')) with k hk,
+                ite (f i ∈ (S * S'))
+                    (sum_over (λ (j : fin m), (f i).val * (g j).val))
+                    0),
+  { cases (classical.sets_of_finite_types_are_finite _ (classical.subtypes_of_finite_types_are_finite _ is_finite _) (S*S')) with k hk,
     cases hk with in_p hk, cases hk with in_p_i in_p_s, 
     rw pset_embed_eq_sum_over _ in_p in_p_i in_p_s,
     symmetry, apply sum_over_nonzero, 
     { intros x y hnez_x hxy, 
       apply f_i, apply subtype.eq,
-      transitivity (@ite (f x ∈ S * S') (prop_decidable _) R (sum_over (λ (j : fin m), (f x).val * (g j).val)) 0),
+      transitivity (ite (f x ∈ S * S') (sum_over (λ (j : fin m), (f x).val * (g j).val)) 0),
       { have mem1_x : f x ∈ S',
         { apply classical.by_contradiction, intro h,
           apply hnez_x, rw if_neg _, intro h', exact h h'.right, },
@@ -941,9 +934,9 @@ begin
         { rw f_s, existsi x, refl },
         have mem3_x : f x ∈ S * S' := ⟨mem2_x, mem1_x⟩,
         rw [if_pos _, ← mul_sum_over_left], symmetry, apply h2, exact mem1_x, exact mem3_x },
-      transitivity (@ite (f y ∈ S * S') (prop_decidable _) R (sum_over (λ (j : fin m), (f y).val * (g j).val)) 0),
+      transitivity (ite (f y ∈ S * S') (sum_over (λ (j : fin m), (f y).val * (g j).val)) 0),
       assumption,
-      { have hnez_y : @ite (f y ∈ S * S') (prop_decidable _) _ (sum_over (λ (j : fin m), (f y).val * (g j).val)) 0 ≠ 0 := hxy ▸ hnez_x,
+      { have hnez_y : ite (f y ∈ S * S') (sum_over (λ (j : fin m), (f y).val * (g j).val)) 0 ≠ 0 := hxy ▸ hnez_x,
         have mem1_y : f y ∈ S',
         { apply classical.by_contradiction, intro h,
           apply hnez_y, rw if_neg _, intro h', exact h h'.right, },
@@ -953,13 +946,13 @@ begin
         rw [if_pos _, ← mul_sum_over_left], apply h2, exact mem1_y, exact mem3_y }},
     { intros x y hxy, apply in_p_i,
       apply subtype.eq, exact hxy },
-    { transitivity { v | ∃ y : min_nonzero.type is_bool, y ∈ fun.im in_p ∧ v = y.val },
+    { transitivity { v | ∃ y : min_nonzero.type, y ∈ fun.im in_p ∧ v = y.val },
       { funext, apply propext, constructor; intro h; cases h,
         { existsi in_p h_w, constructor,
           existsi h_w, refl, symmetry, assumption },
         { cases h_h, cases h_h_left, existsi h_h_left_w,
           rw [h_h_right, ← h_h_left_h] } },
-      transitivity { v | ∃ y : min_nonzero.type is_bool, y ∈ S * S' ∧ v = y.val },
+      transitivity { v | ∃ y : min_nonzero.type, y ∈ S * S' ∧ v = y.val },
       { funext, apply propext, constructor;
         intro h; cases h; existsi h_w; refine and.intro _ h_h.right,
         { rw in_p_s, exact h_h.left }, { rw ← in_p_s, exact h_h.left } },
@@ -967,7 +960,7 @@ begin
         { cases h, cases h_h, subst h_h_right, constructor,
           { have : h_w ∈ fun.im f := f_s ▸ h_h_left.left, cases this,
             existsi this_w, simp, subst this_h,
-            rw @if_pos _ (prop_decidable _) h_h_left,
+            rw if_pos h_h_left,
             rw ← mul_sum_over_left, apply h2, exact h_h_left.right },
           exact h_w.property.left }, 
         { cases h, cases h_left, subst h_left_h, simp at h_right,
@@ -978,19 +971,19 @@ begin
           existsi f h_left_w, apply and.intro this,
           simp, rw if_pos _, rw ← mul_sum_over_left,
           apply h2, exact this.right, exact this } } } },
-  { congr, funext, cases prop_decidable (f i ∈ S * S'),
-    { rw if_neg _, rw h2',
+  { congr, funext, by_cases (f i ∈ S * S'),
+    { rw if_pos, rw mul_sum_over_left, exact h },
+    { rw if_neg, rw h2',
       { intro h', apply h, refine and.intro  _ h',
         rw f_s, existsi i, refl },
-      { exact h } },
-    { rw if_pos, rw mul_sum_over_left, exact h } }
+      exact h } }
 end
 
 lemma pset_embed_inj : function.injective min_nonzero.pset_embed :=
   ker_trivial_imp_inj min_nonzero.pset_embed 
                       pset_embed_preserves_add 
   $ λ S h, by {
-    cases (sets_of_finite_types_are_finite _ _ S),
+    cases (classical.sets_of_finite_types_are_finite _ _ S),
     { revert S, induction w; intros,
       { apply has_size_zero_iff_empty _ h_1 },
       { cases h_1 with f, cases h_1_h with f_i f_s,
@@ -1015,7 +1008,7 @@ lemma pset_embed_inj : function.injective min_nonzero.pset_embed :=
           { apply restrict_inj_if_fun_inj _ f_i },
           { rw [f_s, im_restrict], assumption } }, 
         refl } },
-    { apply subtypes_of_finite_types_are_finite, assumption } }
+    { apply classical.subtypes_of_finite_types_are_finite, assumption } }
 
 noncomputable
 def min_nonzero.proj : R → R :=
@@ -1023,12 +1016,12 @@ def min_nonzero.proj : R → R :=
 
 lemma min_nonzero_proj_def2 {n} (f : fin n → R) (x : R)
   : function.injective f
-  → min_nonzero.set is_bool = fun.im f
+  → min_nonzero.set = fun.im f
   → min_nonzero.proj x = sum_over (λ j, x * f j) :=
 begin
   intros f_i f_s, dsimp [min_nonzero.proj],
   rw ← mul_sum_over_left, congr,
-  have : ∀ j, min_nonzero.set is_bool (f j),
+  have : ∀ j, min_nonzero.set (f j),
   { rw f_s, intro, existsi j, refl },
   rw pset_embed_eq_sum_over set.univ (λ j, ⟨f j, this j⟩),
   { intros i j h, apply f_i,
@@ -1042,17 +1035,16 @@ end
 
 lemma min_nonzero_proj_def3
   : ∀ x, min_nonzero.proj x
-       = min_nonzero.pset_embed {y : subtype (min_nonzero.set is_bool) | x * y.val ≠ 0} :=
+       = min_nonzero.pset_embed {y : subtype min_nonzero.set | x * y.val ≠ 0} :=
 begin
   intro x,
-  have := classical.sets_of_finite_types_are_finite _  is_finite
-                  (min_nonzero.set is_bool),
+  have := classical.sets_of_finite_types_are_finite _  is_finite min_nonzero.set,
   destruct this, intros size h, cases h with f h, cases h with f_i f_s,
   rw min_nonzero_proj_def2 f x f_i f_s,
-  { cases classical.subsets_of_finite_sets_are_finite (λ y (h : y ∈ min_nonzero.set is_bool ∧ x * y ≠ 0), h.left) this with size' h,
+  { cases classical.subsets_of_finite_sets_are_finite (λ y (h : y ∈ min_nonzero.set ∧ x * y ≠ 0), h.left) this with size' h,
     cases h with g h, cases h with g_i g_s,
     rw sum_over_nonzero (λ j, x * f j) g,
-    { have h1 : ∀ i, min_nonzero.set is_bool (g i),
+    { have h1 : ∀ i, min_nonzero.set (g i),
       { have : ∀ i, fun.im g (g i) := λ i, ⟨i, rfl⟩,
         rw ← g_s at this, intro i, exact and.left (this i) },
       have h2 : ∀ i, x * (g i) ≠ 0,
@@ -1069,65 +1061,64 @@ begin
         { cases h, rw ← h_h, apply h2 } } },
     { intros a b hnez hab, simp at hab ⊢,
       apply f_i, transitivity x * f a,
-      { rw boolean_ring.comm is_bool,
+      { rw mul_comm,
         have hnez_a : f a * x ≠ 0,
-        { rw boolean_ring.comm is_bool, exact hnez },
-        have : min_nonzero.set is_bool (f a),
+        { rw mul_comm, exact hnez },
+        have : min_nonzero.set (f a),
         { rw f_s, existsi a, refl },
         symmetry, refine or.resolve_right (this.right x) hnez_a },
       transitivity x * f b, exact hab,
-      { rw boolean_ring.comm is_bool,
+      { rw mul_comm,
         have hnez_b : f b * x ≠ 0,
-        { rw boolean_ring.comm is_bool, rw ← hab, exact hnez, },
-        have : min_nonzero.set is_bool (f b),
+        { rw mul_comm, rw ← hab, exact hnez },
+        have : min_nonzero.set (f b),
         { rw f_s, existsi b, refl },
         refine or.resolve_right (this.right x) hnez_b } },
   assumption, 
   { rw ← g_s, transitivity { t ∈ fun.im f | t * x = t },
     { funext, apply propext, constructor;
       rw ← f_s; intro h; apply and.intro h.left,
-      { rw boolean_ring.comm is_bool at h,
+      { rw mul_comm at h,
         apply or.resolve_right (h.left.right x) h.right },
-      { rw boolean_ring.comm is_bool,
+      { rw mul_comm,
         rw h.right, exact h.left.left } },
     { funext, apply propext, constructor; intro h,
       { cases h, destruct h_left, intros k hk, 
         rw ← f_s at h_left, constructor,
         { existsi k, simp, rw hk,
-          rw boolean_ring.comm is_bool, assumption },
+          rw mul_comm, assumption },
         { exact h_left.left } },
       { cases h, cases h_left with k hk, simp at hk,
         have : f k = a,
         { rw ← hk, symmetry,
-          rw boolean_ring.comm is_bool,
-          have : min_nonzero.set is_bool (f k),
+          rw mul_comm,
+          have : min_nonzero.set (f k),
           { rw f_s, existsi k, refl }, 
           apply or.resolve_right (this.right x),
           rw ← hk at h_right,
-          rw boolean_ring.comm is_bool at h_right,
+          rw mul_comm at h_right,
           exact h_right },
         rw ← this at hk ⊢, constructor, { existsi k, refl },
-        rw boolean_ring.comm is_bool at hk, exact hk } } } }
+        rw mul_comm at hk, exact hk } } } }
 end
 
 lemma min_nonzero_proj_linear : ∀ x y,
   min_nonzero.proj (x + y) = min_nonzero.proj x + min_nonzero.proj y :=
 begin
   intros,
-  cases classical.sets_of_finite_types_are_finite _  is_finite
-          (min_nonzero.set is_bool) with size h,
+  cases classical.sets_of_finite_types_are_finite _  is_finite min_nonzero.set with size h,
   cases h with f h, cases h with f_i f_s,
   repeat { rw min_nonzero_proj_def2 f _ f_i f_s },
   rw ← sum_over_sum, congr, funext, 
   apply right_distrib
 end
 
-lemma min_nonzero_proj_min_nonzero : ∀ x : min_nonzero.type is_bool,
+lemma min_nonzero_proj_min_nonzero : ∀ x : min_nonzero.type,
   min_nonzero.proj x.val = x.val :=
 begin
   intros,
   rw min_nonzero_proj_def3,
-  rw (_ : {y : subtype (min_nonzero.set is_bool) | x.val * y.val ≠ 0} = { y | x = y }),
+  rw (_ : {y : subtype min_nonzero.set | x.val * y.val ≠ 0} = { y | x = y }),
   rw pset_embed_eq_sum_over _ (λ j : fin 1, x),
   { simp [sum_over] },
   { intros x y _, apply fin1.singleton },
@@ -1146,45 +1137,45 @@ lemma min_nonzero_proj_eq : ∀ x, min_nonzero.proj x = x :=
                    ...             = x*y - x*(y*y) : by rw mul_assoc
                    ...             = x*y - x*y     : by rw is_bool
                    ...             = 0             : sub_self _,
-  have h2 : ∀ x y, @partial_order.le _ (pseudo_subset_order is_bool) (x - x * y) x,
+  have h2 : ∀ x y : R, x - x * y ≤ x,
   from λ x y, calc (x - x * y) * x = x*x - (x * y)*x   : mul_sub_right_distrib _ _ _
-                   ...             = x*x - x * (x * y) : by rw boolean_ring.comm is_bool (x*y)
+                   ...             = x*x - x * (x * y) : by rw mul_comm (x*y)
                    ...             = x*x - x*x*y       : by rw mul_assoc
                    ...             = x - x*y           : by rw is_bool,
   by {
-    apply @partial_order.induction _ (pseudo_subset_order is_bool), assumption',
+    apply partial_order.induction, assumption',
     intros x ih,
-    cases classical.em (x = 0),
+    by_cases (x = 0),
     { rw h, rw min_nonzero_proj_def3,
       rw pset_embed_eq_sum_over _ fin.elim0,
       simp [sum_over], { intro a, exact a.elim0 },
       { funext, transitivity false; apply propext,
         { rw iff_false, simp, apply not_false },
         { rw false_iff, intro h, cases h, exact h_w.elim0 } } },
-    cases @partial_order.ex_min  _ (pseudo_subset_order is_bool) is_finite (λ r, r ≠ 0) x h with x' h',
+    cases partial_order.ex_min is_finite (λ r, r ≠ 0) x h with x' h',
     specialize h1 x x', specialize h2 x x',
-    have h3 : min_nonzero.set is_bool x',
+    have h3 : min_nonzero.set x',
     { rw min_nonzero_def2,
       cases h'.left, constructor, assumption,
       intro y, rw classical.dne (y = 0), apply right },
-    have h4 : @partial_order.lt _ (pseudo_subset_order is_bool) (x - x * x') x,
-    { apply pseudo_subset_order.lt_of_le_and_ne is_bool,
+    have h4 : x - x * x' < x,
+    { apply lt_of_le_of_ne,
       assumption, intro h'', rw h'' at h1,
       apply h'.left.left, 
       transitivity x' * x, symmetry, exact h'.right,
-      rw boolean_ring.comm is_bool, exact h1 },
+      rw mul_comm, exact h1 },
     transitivity min_nonzero.proj (x - x * x' + x * x'),
     rw sub_add_cancel, rw min_nonzero_proj_linear,
     rw ih (x - x * x') h4,
     rw (_ : x * x' = x'),
     rw (_ : x' = (subtype.mk x' h3).val),
     rw min_nonzero_proj_min_nonzero, simp,
-    rw boolean_ring.comm is_bool, exact h'.right }
+    rw mul_comm, exact h'.right }
 
 lemma pset_embed_surj : function.surjective min_nonzero.pset_embed :=
 begin
   dsimp [function.surjective],
-  apply @partial_order.induction R (pseudo_subset_order is_bool) (λ r, ∃ S, min_nonzero.pset_embed S = r) is_finite,
+  apply partial_order.induction (λ r, ∃ S, min_nonzero.pset_embed S = r) is_finite,
   intros x ih, simp * at ih,
   existsi { y | x * subtype.val y ≠ 0 },
   transitivity min_nonzero.proj x,
