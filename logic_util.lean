@@ -61,6 +61,27 @@ begin
     intro hpq, apply h_right, cases hpq, assumption }
 end
 
+lemma classical.exists_of_not_forall {T} {P : T → Prop}
+  : (¬ ∀ x : T, P x) → ∃ x : T, ¬ P x :=
+begin
+  intro, apply classical.by_contradiction, intro h,
+  apply a, intro x, cases classical.em (P x),
+  { assumption },
+  { exfalso, apply h, existsi x, assumption }
+end
+
+lemma classical.implies_iff_or {P Q : Prop} : (P → Q) ↔ (¬ P ∨ Q) :=
+begin
+  constructor, 
+  { intro h, cases classical.em P,
+    exact or.inr (h h_1), exact or.inl h_1 },
+  { intro h, cases h, exact false.elim ∘ h, exact λ _, h }
+end
+
+lemma classical.dne (P) : P ↔ ¬ ¬ P :=
+iff.intro (λ h h', h' h)
+  $ by { intro h, cases classical.em P, assumption, trivial }
+
 lemma subset_of_empty_iff_empty {T} {A : set T}  : A ⊆ ∅ ↔ A = ∅ :=
 by { simp [(⊆), set.subset], constructor,
      { intro h, funext, apply propext,

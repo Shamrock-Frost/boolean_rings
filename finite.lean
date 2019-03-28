@@ -4,6 +4,17 @@ lemma fin.pos_of_elem {n} : fin n → 0 < n :=
 by { intro k, by_cases n = 0, rw [h] at k,
      exact k.elim0, exact nat.pos_of_ne_zero h, }
 
+
+
+lemma fin1.all_zero : ∀ x : fin 1, x.val = 0 :=
+begin
+  intros, cases x, simp, apply nat.eq_zero_of_le_zero,
+  apply nat.le_of_succ_le_succ, exact x_is_lt
+end
+
+lemma fin1.singleton (x y : fin 1) : x = y :=
+fin.eq_of_veq (eq.trans (fin1.all_zero x) $ eq.symm $ fin1.all_zero y)
+
 def fin.glue {A} {n m} (f : fin n → A) (g : fin m → A) : fin (n + m) → A :=
 λ k, if h : k.val < n
      then f ⟨k.val, h⟩
