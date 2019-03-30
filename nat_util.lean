@@ -47,3 +47,41 @@ begin
     rw ← nat.mul_sub_left_distrib, rw ← nat.add_one,
     rw nat.add_sub_cancel, assumption, simp }
 end
+
+lemma nat.mul_two : ∀ n, n * 2 = n + n :=
+by simp [(*), nat.mul]
+
+def binomial_coefficient : nat → nat → nat
+| _     0     := 1
+| 0     _     := 0
+| (n+1) (k+1) := binomial_coefficient n (k+1) + binomial_coefficient n k
+
+lemma binomial_coefficient_lt
+  : ∀ n k, n < k → binomial_coefficient n k = 0 :=
+begin
+  intro, induction n with n ih; intros k h,
+  { cases k, cases h, refl },
+  cases k, cases h,
+  simp [binomial_coefficient],
+  rw [ih, ih], transitivity,
+  apply nat.lt_succ_self, assumption,
+  apply nat.lt_of_succ_lt_succ h
+end
+
+lemma binomial_coefficient_self
+  : ∀ n, binomial_coefficient n n = 1 :=
+begin
+  intro, induction n with n ih, refl,
+  simp [binomial_coefficient], rw ih,
+  rw binomial_coefficient_lt, apply nat.lt_succ_self
+end
+
+lemma binomial_coefficient_zero
+  : ∀ n, binomial_coefficient n 0 = 1 :=
+by intro; cases n; refl
+
+theorem nat.even_odd_induction (P : nat → Sort _)
+  (bc₀ : P 0) (bc₁ : P 1) (rec : ∀ n, P n → P n.succ → P n.succ.succ) : ∀ n, P n
+| 0     := bc₀
+| 1     := bc₁
+| (n+2) := rec n (nat.even_odd_induction n) (nat.even_odd_induction n.succ)

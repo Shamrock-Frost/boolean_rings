@@ -1,7 +1,7 @@
-import .finite
+import .finite .heq
 
 section 
-parameters {R : Type _} [ring R]
+parameters {R : Type _} [semiring R]
 
 def sum_over : Π {n} (f : fin n → R), R
 | 0     f := 0
@@ -10,6 +10,14 @@ def sum_over : Π {n} (f : fin n → R), R
 lemma sum_over.step {n} (f : fin (nat.succ n) → R)
   : sum_over f = sum_over (fin.restrict f) + f ⟨n, nat.lt_succ_self n⟩
   := rfl
+
+lemma sum_over.step_front {n} (f : fin (nat.succ n) → R)
+  : sum_over f = f  ⟨0, nat.zero_lt_succ n⟩ + sum_over (λ j : fin n, f ⟨nat.succ j.val, nat.succ_lt_succ j.is_lt⟩) :=
+begin
+  induction n with n ih, simp [sum_over],
+  rw [sum_over.step, ih (fin.restrict f)],
+  rw add_assoc, congr
+end
 
 lemma sum_over_split (n m) :
   ∀ (f : fin (n + m) → R),
@@ -191,7 +199,7 @@ end
 end same_embedding
 
 section
-parameters {R : Type _} [comm_ring R]
+parameters {R : Type _} [semiring R]
 
 lemma sum_unique.helper {n} (k : fin (nat.succ n))
   : ∀ (f : fin (nat.succ n) → R), sum_over f = sum_over (fin.fun_omit k.val f) + f k :=
@@ -373,4 +381,246 @@ begin
     all_goals {refl} }
 end
 
+end
+
+lemma mul_sum_over_left {R : Type _} [semiring R]
+  : ∀ {n} (f : fin n → R) a,
+    a * sum_over f = sum_over (λ k, a * f k) :=
+begin
+  intros n, induction n; intros,
+  { simp [sum_over] },
+  case nat.succ : m ih { 
+    simp [sum_over],
+    rw [left_distrib],
+    congr, apply ih }
+end
+
+lemma mul_sum_over_right {R : Type _} [semiring R]
+  : ∀ {n} (f : fin n → R) a,
+    sum_over f * a = sum_over (λ k, f k * a) :=
+begin
+  intros n, induction n; intros,
+  { simp [sum_over] },
+  case nat.succ : m ih { 
+    simp [sum_over],
+    rw [right_distrib],
+    congr, apply ih }
+end
+
+lemma mul_sum_eq_double_sum {R : Type _} [ring R]
+  : ∀ {n m} (f : fin n → R) (g : fin m → R),
+    sum_over f * sum_over g
+    = sum_over (λ i : fin n,
+        sum_over (λ j : fin m, 
+          f i * g j)) := 
+by { intros, rw mul_sum_over_right, congr, funext, rw mul_sum_over_left }
+
+-- @[reducible]
+-- lemma double_sum_over_subset_indices {R : Type _} [ring R] {n m}
+--   (S : set (fin n × fin m)) [decidable_pred S] (f : fin n × fin m → R) : R :=
+--   sum_over (λ j : fin n, sum_over (λ k : fin m,
+--     if S (j, k) then f (j, k) else 0))
+
+-- lemma double_sum_param {R : Type _} [ring R] {n m k}
+--   (S : set (fin n × fin m)) [decidable_pred S]
+--   (f : fin n × fin m → R) (p : fin k → fin n × fin m)
+--   : function.injective p → S = fun.im p
+--   → double_sum_over_subset_indices S f = sum_over (f ∘ p) :=
+-- begin
+--   tactic.unfreeze_local_instances,
+--   revert S, induction k with k ih; intros S _inst_2 p_i p_s,
+--   { dunfold double_sum_over_subset_indices,
+--     transitivity (0 : R), transitivity sum_over (λ j : fin n, (0 : R)),
+--     congr, funext, transitivity sum_over (λ k : fin m, (0 : R)), congr, funext,
+--     by_cases S (j,k), { rw p_s at h, cases h, exact h_w.elim0 }, { rw if_neg h },
+--     apply @sum_over_eq_zero _ _ m, apply @sum_over_eq_zero _ _ n,
+--     rw ← sum_over_eq_zero, congr, funext x, apply x.elim0 },
+--   rw [sum_over.step, (_ : fin.restrict (f ∘ p) = f ∘ fin.restrict p)],
+--   have : decidable_pred { y | S y ∧ y ≠ p ⟨k, nat.lt_succ_self k⟩ }, 
+--   { intros y, by_cases y = p ⟨k, nat.lt_succ_self k⟩,
+--     { apply is_false, intro h', exact h'.right h },
+--     by_cases h' : S y, exact is_true (and.intro h' h), 
+--     apply is_false, intro h, exact h' h.left },
+--   rw ← @ih (fin.restrict p) { y | S y ∧ y ≠ p ⟨k, nat.lt_succ_self k⟩ } this,
+--   dunfold double_sum_over_subset_indices,
+--   --cases n with n, { exact (p ⟨k, nat.lt_succ_self k⟩).fst.elim0 },
+--   --cases m with m, { exact (p ⟨k, nat.lt_succ_self k⟩).snd.elim0 },
+--   { have : (f ∘ p) ⟨k, nat.lt_succ_self k⟩
+--          = sum_over (λ j : fin n, if j = prod.fst (p ⟨k, nat.lt_succ_self k⟩)
+--                                   then (f ∘ p) ⟨k, nat.lt_succ_self k⟩
+--                                   else 0),
+--     { clear _inst_2 p_s this S ih,
+--       induction n with n ih,
+--       { apply fin.elim0, apply prod.fst ∘ p, exact ⟨k, nat.lt_succ_self k⟩ },
+--       rw sum_over.step, by_cases fin.mk n (nat.lt_succ_self n) = (p ⟨k, nat.lt_succ_self k⟩).fst,
+--       { rw if_pos h, transitivity 0 + (f ∘ p) ⟨k, nat.lt_succ_self k⟩, rw zero_add,
+--         congr, rw ← @sum_over_eq_zero _ _ n, congr, funext j,
+--         simp [fin.restrict], rw ← h, rw if_neg,
+--         rw sum_over_eq_zero, intro h, apply ne_of_lt j.is_lt, apply fin.veq_of_eq h },
+--       { rw if_neg h, let p' := fin.restrict p,
+        
+        
+--         } } }
+-- end
+
+/-
+
+    *               *
+   **     *         *
+  *** =  ** ∪     ∪ * ∪
+ ****   ***         *
+*****        ****       *
+
+   *              *
+  **    *         *
+ *** = ** ∪     ∪ * 
+****        ***   *
+
+Triangle(n+2) = Triangle(n) shifted up and right
+              ∪ HorizontalLine(n)
+              ∪ VerticalLine(n+1)
+-/
+
+lemma double_sum_triangle.helper1 {R :  Type _} [ring R]
+  : ∀ {n : nat} (f : fin n.succ.succ → fin n.succ.succ → R),
+    sum_over (λ i : fin n.succ.succ, sum_over (λ j : fin i.val.succ, f i ⟨j.val, lt_of_lt_of_le j.is_lt i.is_lt⟩))
+  = sum_over (λ i : fin n.succ, sum_over (λ j : fin i.val,
+    f ⟨i.val, nat.lt_trans i.is_lt (nat.lt_succ_self _)⟩
+      ⟨j.val+1, nat.succ_lt_succ (lt_trans j.is_lt i.is_lt)⟩))
+  + sum_over (λ i : fin n.succ, f ⟨i.val, lt_trans i.is_lt $ nat.lt_succ_self _⟩ ⟨0, nat.zero_lt_succ n.succ⟩)
+  + sum_over (λ j : fin n.succ.succ, f ⟨n.succ, nat.lt_succ_self _⟩ ⟨j.val, j.is_lt⟩) :=
+begin
+  intros, rw [sum_over.step], dsimp [fin.restrict], congr,
+  transitivity
+  sum_over (λ (k : fin (nat.succ n)),
+            f ⟨k.val, lt_trans k.is_lt (nat.lt_succ_self _)⟩
+              ⟨0, nat.zero_lt_succ _⟩ +
+            sum_over (λ (j : fin (k.val)),
+                      f ⟨k.val, lt_trans k.is_lt (nat.lt_succ_self _)⟩
+                        ⟨j.val + 1, nat.succ_lt_succ (lt_trans j.is_lt k.is_lt)⟩)),
+  { congr, funext, rw sum_over.step_front },
+  { rw [sum_over_sum, add_comm] }
+end
+
+lemma double_sum_triangle.helper2 {R :  Type _} [ring R]
+  : ∀ {n : nat} (f : fin n.succ.succ → fin n.succ.succ → R),
+    sum_over
+      (λ (j : fin (nat.succ (nat.succ n))),
+         sum_over (λ (i : fin (nat.succ (nat.succ n) - j.val)),
+          f ⟨i.val + j.val, by { have h1 := nat.add_lt_add_right i.is_lt j.val, rw nat.sub_add_cancel (le_of_lt j.is_lt) at h1, exact h1 }⟩ j))
+  = sum_over
+      (λ (j : fin n.succ),
+         sum_over (λ (i : fin (n.succ - j.val.succ)),
+            f ⟨i.val + j.val.succ,
+                by { have h1 := nat.add_lt_add_right i.is_lt j.val.succ,
+                     rw nat.sub_add_cancel (nat.succ_le_of_lt j.is_lt) at h1,
+                     transitivity n.succ, assumption, apply nat.lt_succ_self }⟩
+              ⟨j.val.succ, nat.succ_lt_succ j.is_lt⟩))
+  + sum_over (λ i : fin n.succ.succ, f ⟨i.val, i.is_lt⟩ ⟨0, nat.zero_lt_succ n.succ⟩)
+  + sum_over (λ j : fin n.succ, f ⟨n.succ, nat.lt_succ_self _⟩ ⟨j.val.succ, nat.succ_lt_succ j.is_lt⟩) :=
+begin
+  intros, rw [sum_over.step_front],
+  rw add_assoc, rw add_comm (sum_over (λ i : fin n.succ.succ, f ⟨i.val, i.is_lt⟩ ⟨0, nat.zero_lt_succ n.succ⟩)),
+  rw add_comm, rw ← add_assoc, congr,
+  transitivity
+    sum_over
+      (λ (j : fin n.succ),
+         sum_over (λ (i : fin (n.succ.succ - j.val.succ)),
+            f ⟨i.val + j.val.succ,
+                by { have h1 := nat.add_lt_add_right i.is_lt j.val.succ,
+                     rw nat.sub_add_cancel (le_of_lt (nat.succ_lt_succ j.is_lt)) at h1,
+                     exact h1 }⟩
+              ⟨j.val.succ, (nat.succ_lt_succ j.is_lt)⟩)),
+  refl, rw ← sum_over_sum, congr, funext,
+  transitivity sum_over
+      (λ (i : fin (nat.succ (nat.succ n - nat.succ (j.val)))),
+         f ⟨i.val + nat.succ (j.val),
+              by { cases i with i i_is_lt, cases j with j j_is_lt, 
+                   have h2 := i_is_lt, rw ← nat.succ_sub at h2,
+                   have h3 := nat.add_lt_add_right h2 (nat.succ j),
+                   rw nat.sub_add_cancel at h3, exact h3,
+                   apply le_trans, exact j_is_lt, apply le_of_lt (nat.lt_succ_self _), exact j_is_lt }⟩
+           ⟨nat.succ j.val, nat.succ_lt_succ j.is_lt⟩),
+  have : nat.succ (nat.succ n) - nat.succ (j.val) = nat.succ (nat.succ n - nat.succ (j.val)),
+  { rw nat.succ_sub, apply nat.succ_le_succ, apply nat.le_of_succ_le_succ j.is_lt },
+  congr, exact this, { apply fin.funext R this, intro x, cases x, simp },
+  rw sum_over.step, congr, dsimp,
+  rw nat.sub_add_cancel, exact j.is_lt
+end
+
+lemma double_sum_triangle {R :  Type _} [ring R]
+  : ∀ {n} (f : fin n → fin n → R), 
+    sum_over (λ j : fin n, sum_over (λ k : fin j.val.succ, f j ⟨k.val, lt_of_lt_of_le k.is_lt j.is_lt⟩))
+  = sum_over (λ k : fin n, sum_over (λ j : fin (n - k.val), f ⟨j.val + k.val, by { have h1 := nat.add_lt_add_right j.is_lt k.val, rw nat.sub_add_cancel (le_of_lt k.is_lt) at h1, exact h1, }⟩ k)) :=
+begin
+  apply nat.even_odd_induction
+    (λ n, ∀ f : fin n → fin n → R,
+     sum_over (λ j : fin n, sum_over (λ k : fin j.val.succ, f j ⟨k.val, lt_of_lt_of_le k.is_lt j.is_lt⟩))
+     = sum_over (λ k : fin n, sum_over (λ j : fin (n - k.val), f ⟨j.val + k.val, by { have h1 := nat.add_lt_add_right j.is_lt k.val, rw nat.sub_add_cancel (le_of_lt k.is_lt) at h1, exact h1, }⟩ k))),
+  intro f, simp [sum_over], simp [sum_over], intros n ih1 ih2 f,
+  rw double_sum_triangle.helper1,
+  rw double_sum_triangle.helper2,
+  rw add_assoc, rw add_assoc, apply congr,
+  { apply congr_arg, 
+    transitivity sum_over (λ i : fin n, sum_over (λ j : fin i.val.succ,
+      f ⟨i.val.succ, nat.succ_lt_succ (lt_trans i.is_lt (nat.lt_succ_self _))⟩
+        ⟨j.val.succ, nat.lt_of_le_of_lt j.is_lt (nat.succ_lt_succ (lt_trans i.is_lt (nat.lt_succ_self _)))⟩)),
+    rw sum_over.step_front, simp [sum_over],
+    congr, funext, congr, funext, congr, rw add_comm,
+    transitivity sum_over (λ i : fin n, sum_over (λ j : fin i.val.succ,
+      (λ (i' j' : fin n), f ⟨i'.val+1, nat.succ_lt_succ (lt_trans i'.is_lt (nat.lt_succ_self _))⟩
+                            ⟨j'.val+1, nat.succ_lt_succ (lt_trans j'.is_lt (nat.lt_succ_self _))⟩)
+        i ⟨j.val, lt_of_lt_of_le j.is_lt i.is_lt⟩)),
+    refl, rw ih1, rw sum_over.step, simp [fin.restrict], 
+    symmetry, transitivity (0 : R) + sum_over
+        (λ (k : fin n),
+           sum_over
+             (λ (i : fin (nat.succ n - nat.succ k.val)),
+                f ⟨nat.succ (k.val) + i.val, by { have h1 := nat.add_lt_add_right i.is_lt k.val.succ, rw nat.sub_add_cancel (nat.succ_le_succ $ le_of_lt k.is_lt) at h1, rw add_comm,
+                                                  apply lt_trans, exact h1, apply nat.lt_succ_self }⟩
+                  ⟨nat.succ (k.val), lt_trans (nat.succ_lt_succ k.is_lt) (nat.lt_succ_self _)⟩)),
+    { congr, transitivity sum_over (λ (i : fin (nat.succ n - nat.succ n)), f ⟨nat.succ n + i.val, _⟩ ⟨nat.succ n, _⟩),
+      refl, transitivity sum_over (λ (i : fin 0), f ⟨nat.succ n + i.val, _⟩ ⟨nat.succ n, _⟩),
+      congr, apply nat.sub_self, apply heq.funext, apply nat.sub_self, rw nat.sub_self, exact fin.elim0, 
+      apply i.elim0, apply i.elim0, refl },
+    { rw zero_add, congr, funext,
+      have : nat.succ n - nat.succ k.val = n - k.val := nat.succ_sub_succ n k.val,
+      apply dep_fn_eq_of_heq (λ m, fin m → R), exact this,
+      apply fin.funext, { intro x, cases x, simp }, exact this } },
+  { rw @sum_over.step _ _ n.succ,
+    rw sum_over.step ((λ (j : fin (nat.succ n)), f ⟨nat.succ n, _⟩ ⟨nat.succ (j.val), _⟩)),
+    rw ← add_assoc, rw ← add_assoc, apply congr_fun,
+    apply congr_arg, rw @sum_over.step _ _ n.succ,
+    dsimp [fin.restrict],
+    rw add_assoc, congr, rw sum_over.step_front },
+end
+
+-- I don't need this but it's neat ¯\_(ツ)_/¯
+lemma mul_sum_eq_linear_sum {R : Type _} [ring R]
+  : ∀ {n m} (f : fin n → R) (g : fin m → R),
+    sum_over f * sum_over g
+    = sum_over (λ p : fin (n * m),
+                let p' := fin.line_to_square p
+                in f p'.fst * g p'.snd) :=
+begin
+  intros, rw mul_sum_eq_double_sum,
+  induction m,
+  { transitivity (0 : R), apply sum_over_eq_zero ,
+    rw (_ : (λ (p : fin (n * 0)), let p' : fin n × fin 0 := fin.line_to_square p in f (p'.fst) * g (p'.snd))
+          = (λ (p : fin (n * 0)), 0)),
+    rw sum_over_eq_zero , funext, rw mul_zero at p, 
+    apply p.elim0 },
+  case nat.succ : m ih_m {
+    simp [sum_over], 
+    rw sum_over_sum,
+    rw [sum_over_split],
+    rw add_comm,
+    apply congr,
+    { apply congr_arg,
+      dsimp [fin.restrict_many, fin.restrict],
+      rw ih_m, refl, },
+    { rw (_ : (λ (p : fin (n * nat.succ m)), f ((fin.line_to_square p).fst) * g ((fin.line_to_square p).snd))
+            = (λ (p : fin (n * nat.succ m)), 
+                (λ k : fin n × fin (nat.succ m), f (k.fst) * g (k.snd)) (fin.line_to_square p))),
+      rw sum_over_tail, refl } }
 end

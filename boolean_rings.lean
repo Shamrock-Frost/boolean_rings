@@ -1,4 +1,4 @@
-import .logic_util .algebra_util
+import .logic_util .algebra_util .heq
 import .finite .partial_order_induction
 import .sum_over
 
@@ -117,108 +117,6 @@ def sum_of {R : Type _} [comm_ring R] (h : finite R) (S : set R) : R :=
   $ classical.some
   $ classical.some_spec
   $ classical.sets_of_finite_types_are_finite R h S
-
-section transport
-universes u v
-def eq.transport {A : Type u} (B : A → Type v) {a a' : A}
-  : a = a' → B a → B a' := by { intros, cases a_1, assumption, }
-lemma heq_transport {A : Type u} (B : A → Type v) {a b : A} (p : a = b)
-  : ∀ b : B a, b == eq.transport B p b := by { intros, cases p, refl }
-end transport
-section transport_inj
-universes u v w
-
-lemma inj_implies_transport_inj {A : Type u} (B : A → Type v)
-                                (C : A → Type w) {a a' : A}
-                                (p : a = a')
-  : ∀ f : B a → C a,
-    function.injective f
-    → function.injective (eq.transport (λ x, B x → C x) p f) :=
-by { cases p, simp [eq.transport], intro, exact id }
-
-lemma heq.funext1 {A : Type u} (B : Type v)
-                              (C : A → Type w) {a a' : A}
-                              (p : a = a')
-  : ∀ (f : B → C a) (g : B → C a'), (∀ x, f x == g x) → f == g :=
-by { cases p, intros, apply heq_of_eq, funext, apply eq_of_heq (a_1 x) }
-
-lemma heq.funext {A : Type u} (B : A → Type v)
-                              (C : Type w) {a a' : A}
-                              (p : a = a')
-  : (B a → false) → ∀ (f : B a → C) (g : B a' → C), f == g :=
-by { cases p, intros,
-     rw (_ : f = (λ b, false.elim (a_1 b))),
-     rw (_ : g = (λ b, false.elim (a_1 b))),
-     all_goals { funext, exfalso, exact a_1 x }, }
-
-lemma sigma_eq_of_heq {A : Type u} (B : A → Type v)
-                    : ∀ (a a' : A) (p : a = a')
-                        (b : B a) (b' : B a'),
-                      b == b' → sigma.mk a b = sigma.mk a' b' :=
-by { intros, congr; assumption }
-end transport_inj
-
-section
-parameters {R : Type _} [ring R]
-lemma mul_sum_over_left 
-  : ∀ {n} (f : fin n → R) a,
-    a * sum_over f = sum_over (λ k, a * f k) :=
-begin
-  intros n, induction n; intros,
-  { simp [sum_over] },
-  case nat.succ : m ih { 
-    simp [sum_over],
-    rw left_distrib, congr, apply ih }
-end
-
-lemma mul_sum_over_right 
-  : ∀ {n} (f : fin n → R) a,
-    sum_over f * a = sum_over (λ k, f k * a) :=
-begin
-  intros n, induction n; intros,
-  { simp [sum_over] },
-  case nat.succ : m ih { 
-    simp [sum_over],
-    rw right_distrib, congr, apply ih }
-end
-
-lemma mul_sum_eq_double_sum
-  : ∀ {n m} (f : fin n → R) (g : fin m → R),
-    sum_over f * sum_over g
-    = sum_over (λ i : fin n,
-        sum_over (λ j : fin m, 
-          f i * g j)) := 
-by { intros, rw mul_sum_over_right, congr, funext, rw mul_sum_over_left }
-
--- I don't need this but it's neat ¯\_(ツ)_/¯
-lemma mul_sum_eq_linear_sum
-  : ∀ {n m} (f : fin n → R) (g : fin m → R),
-    sum_over f * sum_over g
-    = sum_over (λ p : fin (n * m),
-                let p' := fin.line_to_square p
-                in f p'.fst * g p'.snd) :=
-begin
-  intros, rw mul_sum_eq_double_sum,
-  induction m,
-  { transitivity (0 : R), apply sum_over_eq_zero ,
-    rw (_ : (λ (p : fin (n * 0)), let p' : fin n × fin 0 := fin.line_to_square p in f (p'.fst) * g (p'.snd))
-          = (λ (p : fin (n * 0)), 0)),
-    rw sum_over_eq_zero , funext, rw mul_zero at p, 
-    apply p.elim0 },
-  case nat.succ : m ih_m {
-    simp [sum_over], 
-    rw sum_over_sum,
-    rw [sum_over_split], 
-    apply congr,
-    { apply congr_arg,
-      dsimp [fin.restrict_many, fin.restrict],
-      rw ih_m, refl, },
-    { rw (_ : (λ (p : fin (n * nat.succ m)), f ((fin.line_to_square p).fst) * g ((fin.line_to_square p).snd))
-            = (λ (p : fin (n * nat.succ m)), 
-                (λ k : fin n × fin (nat.succ m), f (k.fst) * g (k.snd)) (fin.line_to_square p))),
-      rw sum_over_tail, refl } }
-end
-end
 
 lemma sum_of_unique {R : Type _} [comm_ring R] (h : finite R) (S : set R)
   : ∀ n (f : fin n → R), 
